@@ -27,7 +27,6 @@ from collections.abc import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
@@ -40,7 +39,6 @@ from app.core.config import settings
 from app.database.connection import get_db
 from app.database.models import Base
 from app.main import app
-
 
 # ---------------------------------------------------------------------------
 # Unit test fixtures  (no database required)
@@ -129,6 +127,9 @@ async def db_session(test_database_url: str) -> AsyncGenerator[AsyncSession, Non
 
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        # Drop and recreate so the schema always matches current ORM models,
+        # even when migrations have added constraints since the last test run.
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
     async with engine.connect() as conn:

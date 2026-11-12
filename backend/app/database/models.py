@@ -16,15 +16,15 @@ Design notes:
 
 import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import (
+    TIMESTAMP,
     Boolean,
     Float,
     ForeignKey,
     Integer,
     String,
-    TIMESTAMP,
     Text,
     UniqueConstraint,
 )
@@ -44,7 +44,7 @@ class Collection(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )
@@ -52,6 +52,8 @@ class Collection(Base):
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )
+
+    __table_args__ = (UniqueConstraint("name", name="uq_collections_name"),)
 
 
 class Document(Base):
@@ -62,8 +64,8 @@ class Document(Base):
     )
     filename: Mapped[str] = mapped_column(String(512), nullable=False)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
-    authors: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    publication_year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    authors: Mapped[str | None] = mapped_column(Text, nullable=True)
+    publication_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     page_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
     # SHA-256 hash of the PDF file; used to detect duplicate uploads
@@ -94,7 +96,7 @@ class CollectionDocument(Base):
     )
     document_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("documents.id", ondelete="RESTRICT"),
+        ForeignKey("documents.id", ondelete="CASCADE"),
         primary_key=True,
     )
     added_at: Mapped[datetime] = mapped_column(
@@ -116,7 +118,7 @@ class DocumentPage(Base):
     # Zero-based PDF page index (authoritative reference)
     pdf_page_number: Mapped[int] = mapped_column(Integer, nullable=False)
     # Printed page number as it appears in the document (may differ from pdf_page_number)
-    printed_page_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    printed_page_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     extracted_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
@@ -140,7 +142,7 @@ class EmbeddingModel(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     # Model version string (e.g. commit hash or semantic version); nullable if unknown
-    version: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    version: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Output vector dimension — determined programmatically, never hardcoded
     dimensions: Mapped[int] = mapped_column(Integer, nullable=False)
     # Only one model should be active at a time for a given dimension
@@ -180,15 +182,15 @@ class DocumentChunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     # Nullable until Phase 3 when embeddings are generated
-    embedding_model_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    embedding_model_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("embedding_models.id", ondelete="SET NULL"),
         nullable=True,
     )
     # List of PDF page numbers this chunk covers, e.g. [5, 6]
-    page_numbers: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
+    page_numbers: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
     # Arbitrary chunk-level metadata (chunking config, overlap, etc.)
-    chunk_metadata: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
+    chunk_metadata: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )
@@ -200,7 +202,7 @@ class Conversation(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    title: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )
@@ -237,8 +239,8 @@ class Message(Base):
     # user | assistant | system
     role: Mapped[str] = mapped_column(String(50), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    model_provider: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    model_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    model_provider: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    model_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )

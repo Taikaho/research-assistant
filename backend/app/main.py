@@ -1,18 +1,19 @@
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from pathlib import Path
 
 from fastapi import FastAPI
 
 from app.api.health import router as health_router
+from app.api.router import api_router
 from app.core.config import settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    # Startup actions (database migrations are run via `alembic upgrade head`
-    # before the process starts; see Dockerfile CMD and docker-compose.yml)
+    # Ensure the document storage directory exists on startup.
+    Path(settings.storage_path).mkdir(parents=True, exist_ok=True)
     yield
-    # Shutdown actions
 
 
 app = FastAPI(
@@ -23,3 +24,4 @@ app = FastAPI(
 )
 
 app.include_router(health_router)
+app.include_router(api_router)

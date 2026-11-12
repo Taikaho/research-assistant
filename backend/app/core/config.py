@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
+    # Document upload limits
+    max_upload_size_mb: int = 50
+
+    # Text chunking (Phase 2). Character-based approximation: ~2000 chars ≈ 500 tokens.
+    # Cross-page chunking and token-aware splitting are Phase 3 refinements.
+    chunk_size: int = 2000
+    chunk_overlap: int = 400
+
     # Embedding model (used starting Phase 3).
     # The actual vector dimension is resolved programmatically by loading this model —
     # it is never hardcoded here. See EmbeddingModel table and Phase 3 migration.
