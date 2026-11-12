@@ -1,0 +1,39 @@
+# Test database only — used exclusively by integration tests.
+#
+# Start before running integration tests:
+#   docker compose -f docker-compose.test.yml up -d
+#
+# Then run migrations against it:
+#   cd backend
+#   DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/research_assistant_test \
+#     alembic upgrade head
+#
+# Then run integration tests:
+#   pytest -m integration
+#
+# Stop when done:
+#   docker compose -f docker-compose.test.yml down
+#
+# This database runs on port 5433 to avoid conflicting with the development
+# database on port 5432. Tests must never read from or write to the development
+# database; see backend/tests/conftest.py for the safety assertion.
+
+services:
+  db-test:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: research_assistant_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d research_assistant_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_test_data:
