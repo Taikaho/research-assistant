@@ -1,14 +1,14 @@
 """Add unique constraint on collections.name and change collection_documents FK to CASCADE.
 
 Revision ID: 0002
-Revises: 0001
+Revises: a1b2c3d4e5f6
 Create Date: 2026-11-12
 """
 
 from alembic import op
 
 revision = "0002"
-down_revision = "0001"
+down_revision = "a1b2c3d4e5f6"
 branch_labels = None
 depends_on = None
 

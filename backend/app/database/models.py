@@ -69,10 +69,10 @@ class Document(Base):
     page_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
     # SHA-256 hash of the PDF file; used to detect duplicate uploads
-    file_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    file_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     # pending | processing | completed | failed
     processing_status: Mapped[str] = mapped_column(
-        String(50), nullable=False, default="pending"
+        String(50), nullable=False, default="pending", index=True
     )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
@@ -114,6 +114,7 @@ class DocumentPage(Base):
         UUID(as_uuid=True),
         ForeignKey("documents.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     # Zero-based PDF page index (authoritative reference)
     pdf_page_number: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -178,6 +179,7 @@ class DocumentChunk(Base):
         UUID(as_uuid=True),
         ForeignKey("documents.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -186,6 +188,7 @@ class DocumentChunk(Base):
         UUID(as_uuid=True),
         ForeignKey("embedding_models.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
     )
     # List of PDF page numbers this chunk covers, e.g. [5, 6]
     page_numbers: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
@@ -235,6 +238,7 @@ class Message(Base):
         UUID(as_uuid=True),
         ForeignKey("conversations.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     # user | assistant | system
     role: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -262,6 +266,7 @@ class MessageSource(Base):
         UUID(as_uuid=True),
         ForeignKey("messages.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     chunk_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
