@@ -6,7 +6,9 @@ within the request for Phase 2. Background task processing is Phase 4.
 """
 
 import hashlib
+import logging
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
 
 import aiofiles
@@ -14,10 +16,13 @@ from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.collections.service import link_document
 from app.core.config import settings
 from app.database.models import Document, DocumentChunk, DocumentPage
 from app.documents.chunking import chunk_page_texts
 from app.documents.processing import extract_pdf
+
+logger = logging.getLogger(__name__)
 
 
 async def _compute_hash(file: UploadFile) -> tuple[bytes, str]:
@@ -37,8 +42,36 @@ async def get_document(db: AsyncSession, document_id: uuid.UUID) -> Document | N
     return result.scalar_one_or_none()
 
 
-async def ingest_document(db: AsyncSession, file: UploadFile) -> tuple[Document, bool]:
-    """Store, extract, and chunk a PDF upload.
+async def list_documents(db: AsyncSession) -> Sequence[Document]:
+    result = await db.execute(select(Document).order_by(Document.created_at))
+    return result.scalars().all()
+
+
+async def delete_document(db: AsyncSession, document: Document) -> None:
+    """Permanently delete a document, its pages, chunks, collection links and PDF file.
+
+    Pages, chunks and collection links are removed by ON DELETE CASCADE.
+    The file is removed after the commit so a failed transaction never leaves
+    a database row pointing at a missing file.
+    """
+    file_path = Path(document.file_path)
+    await db.delete(document)
+    await db.commit()
+    try:
+        file_path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("Could not delete stored PDF %s", file_path, exc_info=True)
+
+
+async def ingest_document(
+    db: AsyncSession,
+    file: UploadFile,
+    collection_ids: Sequence[uuid.UUID] = (),
+) -> tuple[Document, bool]:
+    """Store, extract, and chunk a PDF upload, and add it to the given collections.
+
+    The caller must verify that collection_ids exist. For a duplicate upload the
+    existing document is added to the collections instead.
 
     Returns:
         (document, created) — created=False means a duplicate was detected
@@ -59,6 +92,9 @@ async def ingest_document(db: AsyncSession, file: UploadFile) -> tuple[Document,
     # Deduplication: return existing document if same file was already uploaded.
     existing = await get_document_by_hash(db, file_hash)
     if existing is not None:
+        if collection_ids:
+            await link_document(db, collection_ids, existing.id)
+            await db.commit()
         return existing, False
 
     document_id = uuid.uuid4()
@@ -121,6 +157,7 @@ async def ingest_document(db: AsyncSession, file: UploadFile) -> tuple[Document,
     document.publication_year = meta.publication_year
     document.page_count = meta.page_count
     document.processing_status = "completed"
+    await link_document(db, collection_ids, document_id)
     await db.commit()
     await db.refresh(document)
     return document, True

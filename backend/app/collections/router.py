@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.collections import service
 from app.collections.schemas import CollectionCreate, CollectionResponse, CollectionUpdate
 from app.database.connection import get_db
+from app.documents import service as documents_service
+from app.documents.schemas import DocumentResponse
 
 router = APIRouter(prefix="/collections", tags=["collections"])
 
@@ -68,3 +70,47 @@ async def delete_collection(
     if collection is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found.")
     await service.delete_collection(db, collection)
+
+
+# ---------------------------------------------------------------------------
+# Collection membership
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{collection_id}/documents", response_model=list[DocumentResponse])
+async def list_collection_documents(
+    collection_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+) -> list[DocumentResponse]:
+    if await service.get_collection(db, collection_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found.")
+    documents = await service.list_documents(db, collection_id)
+    return [DocumentResponse.model_validate(d) for d in documents]
+
+
+@router.put(
+    "/{collection_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def add_document_to_collection(
+    collection_id: uuid.UUID, document_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+) -> None:
+    """Add an existing document to a collection. Idempotent."""
+    if await service.get_collection(db, collection_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found.")
+    if await documents_service.get_document(db, document_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    await service.add_document(db, collection_id, document_id)
+
+
+@router.delete(
+    "/{collection_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def remove_document_from_collection(
+    collection_id: uuid.UUID, document_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+) -> None:
+    """Remove a document from a collection. The document itself is kept."""
+    if await service.get_collection(db, collection_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found.")
+    if not await service.remove_document(db, collection_id, document_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document is not in this collection."
+        )

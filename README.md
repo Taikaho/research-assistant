@@ -4,7 +4,7 @@ An AI-powered scientific document assistant. Upload PDF articles, organise them
 into collections, and ask questions with full source traceability — including
 document title, PDF page number, and the original supporting passage.
 
-> **Status:** Phase 1 complete — project foundation.
+> **Status:** Phase 2 complete — collections and document ingestion.
 > See `SPEC.md` for the full specification and development phases.
 
 ---
@@ -127,6 +127,27 @@ See `.env.example` for all variables with descriptions.
 |---|---|---|
 | GET | `/health` | Application and database health |
 | GET | `/docs` | Interactive API documentation |
+| POST | `/api/v1/collections` | Create a collection |
+| GET | `/api/v1/collections` | List collections |
+| GET | `/api/v1/collections/{id}` | Get a collection |
+| PATCH | `/api/v1/collections/{id}` | Rename or update a collection |
+| DELETE | `/api/v1/collections/{id}` | Delete a collection (its documents are kept) |
+| GET | `/api/v1/collections/{id}/documents` | List the documents in a collection |
+| PUT | `/api/v1/collections/{id}/documents/{document_id}` | Add an existing document to a collection (idempotent) |
+| DELETE | `/api/v1/collections/{id}/documents/{document_id}` | Remove a document from a collection (the document is kept) |
+| POST | `/api/v1/documents` | Upload a PDF (multipart `file`; repeat `collection_ids` to add it to collections) |
+| GET | `/api/v1/documents` | List documents |
+| GET | `/api/v1/documents/{id}` | Get document metadata and processing status |
+| DELETE | `/api/v1/documents/{id}` | Permanently delete a document, its pages, chunks and stored PDF |
+
+Uploading a file that already exists (same SHA-256) returns the existing document
+and adds it to any `collection_ids` given, instead of storing a second copy.
+
+Example upload into two collections:
+
+```bash
+curl -F "file=@paper.pdf"      -F "collection_ids=<collection-uuid-1>"      -F "collection_ids=<collection-uuid-2>"      http://localhost:8000/api/v1/documents
+```
 
 ---
 
@@ -137,8 +158,10 @@ research-assistant/
 ├── backend/
 │   ├── app/
 │   │   ├── api/          # HTTP routing
+│   │   ├── collections/  # Collections and collection membership
 │   │   ├── core/         # Settings (pydantic-settings)
-│   │   └── database/     # SQLAlchemy models and session
+│   │   ├── database/     # SQLAlchemy models and session
+│   │   └── documents/    # PDF upload, extraction and chunking
 │   ├── migrations/       # Alembic migrations
 │   ├── tests/            # Unit and integration tests
 │   ├── alembic.ini
@@ -159,7 +182,7 @@ research-assistant/
 | Phase | Description | Status |
 |---|---|---|
 | 1 | Project foundation | Complete |
-| 2 | Collections and document ingestion | Planned |
+| 2 | Collections and document ingestion | Complete |
 | 3 | Embeddings and retrieval | Planned |
 | 4 | LLM integration | Planned |
 | 5 | Frontend | Planned |
