@@ -6,6 +6,7 @@ import re
 from collections.abc import Sequence
 
 from app.embeddings.base import EmbeddingProvider
+from app.llm.base import ChatMessage, GenerationParams, LLMProvider, LLMResponse
 
 _WORD = re.compile(r"\w+")
 
@@ -54,3 +55,51 @@ class FakeEmbeddingProvider(EmbeddingProvider):
     def embed_query(self, text: str) -> list[float]:
         self.query_calls += 1
         return self._embed(text)
+
+
+class FakeLLMProvider(LLMProvider):
+    """Scripted LLM: returns queued replies (or raises queued errors) and records calls."""
+
+    def __init__(
+        self,
+        name: str = "fake-llm",
+        is_local: bool = True,
+        models: Sequence[str] = ("fake-model-1", "fake-model-2"),
+        default_model: str | None = "fake-model-1",
+    ) -> None:
+        self._name = name
+        self._is_local = is_local
+        self._models = list(models)
+        self._default_model = default_model
+        self.replies: list[str | Exception] = []
+        self.default_reply = "Linear discriminant analysis separates classes [1]."
+        self.calls: list[tuple[str, list[ChatMessage], GenerationParams]] = []
+        self.list_error: Exception | None = None
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def is_local(self) -> bool:
+        return self._is_local
+
+    @property
+    def default_model(self) -> str | None:
+        return self._default_model
+
+    async def generate(
+        self, model: str, messages: list[ChatMessage], params: GenerationParams
+    ) -> LLMResponse:
+        self.calls.append((model, messages, params))
+        reply = self.replies.pop(0) if self.replies else self.default_reply
+        if isinstance(reply, Exception):
+            raise reply
+        return LLMResponse(
+            text=reply, model=model, prompt_tokens=100, completion_tokens=20, finish_reason="stop"
+        )
+
+    async def list_models(self) -> list[str]:
+        if self.list_error is not None:
+            raise self.list_error
+        return list(self._models)

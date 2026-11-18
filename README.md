@@ -129,6 +129,13 @@ See `.env.example` for all variables with descriptions.
 | `EMBEDDING_MODEL_NAME` | `BAAI/bge-small-en-v1.5` | Sentence Transformers model; changing it requires re-indexing |
 | `EMBEDDING_CACHE_DIR` | Hugging Face default | Where model weights are downloaded |
 | `RETRIEVAL_TOP_K` | `5` | Default number of passages returned by search |
+| `LLM_DEFAULT_PROVIDER` | `ollama` | Provider used when a chat request names none |
+| `LLM_LOCAL_ONLY` | `false` | `true` disables cloud providers entirely |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Local Ollama service |
+| `OLLAMA_DEFAULT_MODEL` | first installed | Default Ollama model |
+| `OPENAI_API_KEY` | unset | Enables the OpenAI-compatible cloud provider |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible endpoint |
+| `CHAT_MIN_RELEVANCE` | `0.6` | Below this, answer "insufficient evidence" without calling the LLM |
 | `DEBUG` | `false` | Enable SQLAlchemy query logging |
 
 ---
@@ -152,6 +159,13 @@ See `.env.example` for all variables with descriptions.
 | GET | `/api/v1/documents/{id}` | Get document metadata and processing status |
 | DELETE | `/api/v1/documents/{id}` | Permanently delete a document, its pages, chunks and stored PDF |
 | POST | `/api/v1/search` | Semantic search within selected collections |
+| POST | `/api/v1/chat` | Answer a question from the selected collections, with sources |
+| GET | `/api/v1/conversations` | List conversations |
+| GET | `/api/v1/conversations/{id}` | Conversation history with sources |
+| DELETE | `/api/v1/conversations/{id}` | Delete a conversation (documents are kept) |
+| GET | `/api/v1/models` | Configured providers and their available models |
+| GET | `/api/v1/models/providers` | Configured providers (no network calls) |
+| GET | `/api/v1/models/health` | Provider availability |
 | GET | `/api/v1/embeddings/status` | Active embedding model and indexed chunk count |
 | POST | `/api/v1/embeddings/reindex` | Embed all chunks missing an embedding from the configured model |
 
@@ -174,6 +188,18 @@ curl -X POST http://localhost:8000/api/v1/search \
 
 The first upload or search downloads the embedding model (~130 MB).
 
+Example question (needs an Ollama model, e.g. `ollama pull llama3.2:3b`):
+
+```bash
+curl -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"question": "How does LDA differ from KNN?", "collection_ids": ["<collection-uuid>"], "model_provider": "ollama", "model_name": "llama3.2:3b"}'
+```
+
+The answer cites passages as `[1]`, `[2]`, ...; each entry in `sources` carries
+its `citation_number`, document, PDF page numbers and the original passage.
+Pass the returned `conversation_id` to ask a follow-up question.
+
 ---
 
 ## Project structure
@@ -183,11 +209,13 @@ research-assistant/
 ├── backend/
 │   ├── app/
 │   │   ├── api/          # HTTP routing
+│   │   ├── chat/         # RAG pipeline, prompts, citations, conversations
 │   │   ├── collections/  # Collections and collection membership
 │   │   ├── core/         # Settings (pydantic-settings)
 │   │   ├── database/     # SQLAlchemy models and session
 │   │   ├── documents/    # PDF upload, extraction and chunking
 │   │   ├── embeddings/   # EmbeddingProvider, Sentence Transformers, re-indexing
+│   │   ├── llm/          # LLMProvider, Ollama and OpenAI-compatible adapters
 │   │   └── retrieval/    # Semantic search with collection scoping
 │   ├── migrations/       # Alembic migrations
 │   ├── tests/            # Unit and integration tests
@@ -211,7 +239,7 @@ research-assistant/
 | 1 | Project foundation | Complete |
 | 2 | Collections and document ingestion | Complete |
 | 3 | Embeddings and retrieval | Complete |
-| 4 | LLM integration | Planned |
+| 4 | LLM integration | Complete |
 | 5 | Frontend | Planned |
 | 6 | Evaluation | Planned |
 | 7 | Portfolio release | Planned |

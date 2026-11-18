@@ -85,6 +85,23 @@ def remove_near_duplicates(
     return kept
 
 
+def merge_results(
+    result_lists: Sequence[Sequence[RetrievedChunk]], limit: int
+) -> list[RetrievedChunk]:
+    """Combine results of several queries: best score per chunk, best first, up to `limit`.
+
+    Near-duplicates across the lists are removed the same way as within one search.
+    """
+    best: dict[uuid.UUID, RetrievedChunk] = {}
+    for results in result_lists:
+        for item in results:
+            current = best.get(item.chunk.id)
+            if current is None or item.score > current.score:
+                best[item.chunk.id] = item
+    ranked = sorted(best.values(), key=lambda c: (-c.score, str(c.chunk.id)))
+    return remove_near_duplicates(ranked, settings.retrieval_dedup_threshold, limit)
+
+
 # ---------------------------------------------------------------------------
 # Search
 # ---------------------------------------------------------------------------

@@ -12,7 +12,12 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import Document
-from app.retrieval.service import RetrievedChunk, jaccard, remove_near_duplicates
+from app.retrieval.service import (
+    RetrievedChunk,
+    jaccard,
+    merge_results,
+    remove_near_duplicates,
+)
 from tests.fakes import FakeEmbeddingProvider
 
 
@@ -52,6 +57,37 @@ class TestDeduplicationUnit:
         assert len(kept) == 3
         assert kept[0].score == 0.9
         assert all(c.score == 0.5 for c in kept[1:])
+
+
+@pytest.mark.unit
+class TestMergeResultsUnit:
+    def _item(self, chunk_id: uuid.UUID, text: str, score: float) -> RetrievedChunk:
+        item = _candidate(text, score)
+        item.chunk.id = chunk_id
+        return item
+
+    def test_keeps_best_score_per_chunk_and_ranks(self) -> None:
+        a, b, c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        first = [self._item(a, "alpha passage text here", 0.5)]
+        second = [
+            self._item(b, "beta passage text here", 0.8),
+            self._item(a, "alpha passage text here", 0.7),
+            self._item(c, "gamma passage text here", 0.6),
+        ]
+        merged = merge_results([first, second], limit=10)
+        assert [(m.chunk.id, m.score) for m in merged] == [(b, 0.8), (a, 0.7), (c, 0.6)]
+
+    def test_limit_and_cross_list_near_duplicates(self) -> None:
+        text = "support vector machines find the maximum margin separating hyperplane"
+        merged = merge_results(
+            [
+                [self._item(uuid.uuid4(), text, 0.9)],
+                [self._item(uuid.uuid4(), text, 0.8), self._item(uuid.uuid4(), "other words", 0.7)],
+            ],
+            limit=1,
+        )
+        assert [m.score for m in merged] == [0.9]
+        assert len(merge_results([[self._item(uuid.uuid4(), text, 0.9)]], limit=5)) == 1
 
 
 @pytest.mark.unit

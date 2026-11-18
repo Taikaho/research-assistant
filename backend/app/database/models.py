@@ -243,6 +243,13 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     model_provider: Mapped[str | None] = mapped_column(String(100), nullable=True)
     model_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Assistant messages: True when the answer reports insufficient evidence.
+    insufficient_evidence: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Assistant messages: generation parameters, prompt version, retrieval settings,
+    # embedding model and token usage used to produce the answer (FR-12).
+    generation_metadata: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )
@@ -272,3 +279,9 @@ class MessageSource(Base):
         nullable=False,
     )
     relevance_score: Mapped[float] = mapped_column(Float, nullable=False)
+    # Passage number [n] shown to the model, so answer markers map back to sources.
+    citation_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # True when the answer text cites this passage.
+    cited: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )

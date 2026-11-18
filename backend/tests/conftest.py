@@ -39,8 +39,9 @@ from app.core.config import settings
 from app.database.connection import get_db
 from app.database.models import Base
 from app.embeddings.service import get_embedding_provider
+from app.llm.registry import LLMRegistry, get_llm_registry
 from app.main import app
-from tests.fakes import FakeEmbeddingProvider
+from tests.fakes import FakeEmbeddingProvider, FakeLLMProvider
 
 # ---------------------------------------------------------------------------
 # Embedding provider  (never loads a real model unless a test asks for one)
@@ -50,6 +51,27 @@ from tests.fakes import FakeEmbeddingProvider
 @pytest.fixture
 def fake_embedder() -> FakeEmbeddingProvider:
     return FakeEmbeddingProvider()
+
+
+# ---------------------------------------------------------------------------
+# LLM providers  (never calls Ollama or a cloud API)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_llm() -> FakeLLMProvider:
+    """Local fake provider; the registry default."""
+    return FakeLLMProvider(name="fake-llm", is_local=True)
+
+
+@pytest.fixture
+def fake_cloud_llm() -> FakeLLMProvider:
+    return FakeLLMProvider(name="fake-cloud", is_local=False, default_model="cloud-model")
+
+
+@pytest.fixture
+def llm_registry(fake_llm: FakeLLMProvider, fake_cloud_llm: FakeLLMProvider) -> LLMRegistry:
+    return LLMRegistry([fake_llm, fake_cloud_llm], default_provider="fake-llm")
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +89,7 @@ def mock_db() -> AsyncMock:
 
 @pytest.fixture
 async def client(
-    mock_db: AsyncMock, fake_embedder: FakeEmbeddingProvider
+    mock_db: AsyncMock, fake_embedder: FakeEmbeddingProvider, llm_registry: LLMRegistry
 ) -> AsyncGenerator[AsyncClient, None]:
     """Test client with the database dependency replaced by a mock."""
 
@@ -76,6 +98,7 @@ async def client(
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_embedding_provider] = lambda: fake_embedder
+    app.dependency_overrides[get_llm_registry] = lambda: llm_registry
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
@@ -85,7 +108,7 @@ async def client(
 
 @pytest.fixture
 async def client_db_error(
-    fake_embedder: FakeEmbeddingProvider,
+    fake_embedder: FakeEmbeddingProvider, llm_registry: LLMRegistry
 ) -> AsyncGenerator[AsyncClient, None]:
     """Test client whose database dependency always raises an exception."""
 
@@ -96,6 +119,7 @@ async def client_db_error(
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_embedding_provider] = lambda: fake_embedder
+    app.dependency_overrides[get_llm_registry] = lambda: llm_registry
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
@@ -167,7 +191,7 @@ async def db_session(test_database_url: str) -> AsyncGenerator[AsyncSession, Non
 
 @pytest.fixture
 async def integration_client(
-    db_session: AsyncSession, fake_embedder: FakeEmbeddingProvider
+    db_session: AsyncSession, fake_embedder: FakeEmbeddingProvider, llm_registry: LLMRegistry
 ) -> AsyncGenerator[AsyncClient, None]:
     """Test client wired to the real test database session and a fake embedder."""
 
@@ -176,6 +200,7 @@ async def integration_client(
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_embedding_provider] = lambda: fake_embedder
+    app.dependency_overrides[get_llm_registry] = lambda: llm_registry
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:

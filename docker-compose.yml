@@ -11,6 +11,11 @@ services:
       DEBUG: "false"
       # Persist downloaded embedding model weights across container rebuilds
       EMBEDDING_CACHE_DIR: /models
+      # Ollama runs on the host (see README); reach it from the container
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    extra_hosts:
+      # Makes host.docker.internal resolve on Linux too (built in on Docker Desktop)
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./storage:/app/storage
       - model_cache:/models

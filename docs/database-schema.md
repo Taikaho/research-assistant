@@ -97,6 +97,8 @@ one `embedding_model_id`. No ANN index yet; exact search is used.
 | content | TEXT | |
 | model_provider | VARCHAR(100) | nullable |
 | model_name | VARCHAR(255) | nullable |
+| insufficient_evidence | BOOLEAN | assistant answers that report missing evidence (0004) |
+| generation_metadata | JSONB | nullable; prompt version, temperature, max_tokens, top_k, relevance gate, embedding model, token usage, latencies (0004) |
 | created_at | TIMESTAMPTZ | |
 
 ### message_sources
@@ -106,6 +108,8 @@ one `embedding_model_id`. No ANN index yet; exact search is used.
 | message_id | UUID FK → messages | CASCADE |
 | chunk_id | UUID FK → document_chunks | CASCADE |
 | relevance_score | FLOAT | |
+| citation_number | INTEGER | nullable; the `[n]` marker used for this passage in the answer (0004) |
+| cited | BOOLEAN | true when the answer text cites the passage (0004) |
 
 Sources are assembled by the backend from retrieval metadata.
 The LLM never generates or validates source references.
