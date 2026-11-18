@@ -38,7 +38,19 @@ from sqlalchemy.ext.asyncio import (
 from app.core.config import settings
 from app.database.connection import get_db
 from app.database.models import Base
+from app.embeddings.service import get_embedding_provider
 from app.main import app
+from tests.fakes import FakeEmbeddingProvider
+
+# ---------------------------------------------------------------------------
+# Embedding provider  (never loads a real model unless a test asks for one)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_embedder() -> FakeEmbeddingProvider:
+    return FakeEmbeddingProvider()
+
 
 # ---------------------------------------------------------------------------
 # Unit test fixtures  (no database required)
@@ -54,13 +66,16 @@ def mock_db() -> AsyncMock:
 
 
 @pytest.fixture
-async def client(mock_db: AsyncMock) -> AsyncGenerator[AsyncClient, None]:
+async def client(
+    mock_db: AsyncMock, fake_embedder: FakeEmbeddingProvider
+) -> AsyncGenerator[AsyncClient, None]:
     """Test client with the database dependency replaced by a mock."""
 
     async def override_get_db() -> AsyncGenerator[AsyncMock, None]:
         yield mock_db
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_embedding_provider] = lambda: fake_embedder
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
@@ -69,7 +84,9 @@ async def client(mock_db: AsyncMock) -> AsyncGenerator[AsyncClient, None]:
 
 
 @pytest.fixture
-async def client_db_error() -> AsyncGenerator[AsyncClient, None]:
+async def client_db_error(
+    fake_embedder: FakeEmbeddingProvider,
+) -> AsyncGenerator[AsyncClient, None]:
     """Test client whose database dependency always raises an exception."""
 
     async def override_get_db() -> AsyncGenerator[AsyncMock, None]:
@@ -78,6 +95,7 @@ async def client_db_error() -> AsyncGenerator[AsyncClient, None]:
         yield mock
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_embedding_provider] = lambda: fake_embedder
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
@@ -149,14 +167,15 @@ async def db_session(test_database_url: str) -> AsyncGenerator[AsyncSession, Non
 
 @pytest.fixture
 async def integration_client(
-    db_session: AsyncSession,
+    db_session: AsyncSession, fake_embedder: FakeEmbeddingProvider
 ) -> AsyncGenerator[AsyncClient, None]:
-    """Test client wired to the real test database session."""
+    """Test client wired to the real test database session and a fake embedder."""
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_embedding_provider] = lambda: fake_embedder
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:

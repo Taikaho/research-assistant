@@ -65,14 +65,15 @@ Unique constraint on (name, version).
 | document_id | UUID FK → documents | CASCADE |
 | chunk_index | INTEGER | position within document |
 | text | TEXT | chunk content |
-| embedding_model_id | UUID FK → embedding_models | nullable until Phase 3 |
+| embedding | VECTOR | nullable; dimensionless, dimension given by the model |
+| embedding_model_id | UUID FK → embedding_models | nullable; SET NULL; vector space of `embedding` |
 | page_numbers | JSONB | list of PDF page numbers covered |
 | chunk_metadata | JSONB | chunking config, overlap, etc. |
 | created_at | TIMESTAMPTZ | |
 
-**Note:** The `embedding` vector column is added in a Phase 3 migration.
-pgvector requires a fixed dimension at column creation time; this dimension
-is determined by loading the configured embedding model, not hardcoded.
+**Note:** `embedding` (migration 0003) has no fixed dimension, so changing the
+embedding model only requires re-indexing. Vectors are only ever compared within
+one `embedding_model_id`. No ANN index yet; exact search is used.
 
 ### conversations
 | Column | Type | Notes |

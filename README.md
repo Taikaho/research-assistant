@@ -4,7 +4,7 @@ An AI-powered scientific document assistant. Upload PDF articles, organise them
 into collections, and ask questions with full source traceability — including
 document title, PDF page number, and the original supporting passage.
 
-> **Status:** Phase 2 complete — collections and document ingestion.
+> **Status:** Phase 3 complete — local embeddings and semantic retrieval.
 > See `SPEC.md` for the full specification and development phases.
 
 ---
@@ -45,6 +45,8 @@ cd backend
 # Install dependencies (use a virtual environment)
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
+# CPU-only torch first (the default wheel bundles multi-GB CUDA libraries)
+pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -e ".[dev]"
 
 # Copy env file
@@ -92,6 +94,14 @@ pytest -m integration -v
 docker compose -f docker-compose.test.yml down
 ```
 
+Integration tests use a deterministic fake embedding model; no download needed.
+
+### Real embedding model test (downloads the model on first run)
+
+```bash
+pytest -m model -v
+```
+
 ### Run all tests
 
 ```bash
@@ -116,7 +126,9 @@ See `.env.example` for all variables with descriptions.
 | `DATABASE_URL` | `postgresql+asyncpg://...@localhost:5432/research_assistant` | Development database |
 | `TEST_DATABASE_URL` | `postgresql+asyncpg://...@localhost:5433/research_assistant_test` | Test database (integration tests) |
 | `STORAGE_PATH` | `./storage` | Local PDF storage directory |
-| `EMBEDDING_MODEL_NAME` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model (Phase 3) |
+| `EMBEDDING_MODEL_NAME` | `BAAI/bge-small-en-v1.5` | Sentence Transformers model; changing it requires re-indexing |
+| `EMBEDDING_CACHE_DIR` | Hugging Face default | Where model weights are downloaded |
+| `RETRIEVAL_TOP_K` | `5` | Default number of passages returned by search |
 | `DEBUG` | `false` | Enable SQLAlchemy query logging |
 
 ---
@@ -139,6 +151,9 @@ See `.env.example` for all variables with descriptions.
 | GET | `/api/v1/documents` | List documents |
 | GET | `/api/v1/documents/{id}` | Get document metadata and processing status |
 | DELETE | `/api/v1/documents/{id}` | Permanently delete a document, its pages, chunks and stored PDF |
+| POST | `/api/v1/search` | Semantic search within selected collections |
+| GET | `/api/v1/embeddings/status` | Active embedding model and indexed chunk count |
+| POST | `/api/v1/embeddings/reindex` | Embed all chunks missing an embedding from the configured model |
 
 Uploading a file that already exists (same SHA-256) returns the existing document
 and adds it to any `collection_ids` given, instead of storing a second copy.
@@ -148,6 +163,16 @@ Example upload into two collections:
 ```bash
 curl -F "file=@paper.pdf"      -F "collection_ids=<collection-uuid-1>"      -F "collection_ids=<collection-uuid-2>"      http://localhost:8000/api/v1/documents
 ```
+
+Example search:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "How does LDA differ from KNN?", "collection_ids": ["<collection-uuid>"], "top_k": 5}'
+```
+
+The first upload or search downloads the embedding model (~130 MB).
 
 ---
 
@@ -161,7 +186,9 @@ research-assistant/
 │   │   ├── collections/  # Collections and collection membership
 │   │   ├── core/         # Settings (pydantic-settings)
 │   │   ├── database/     # SQLAlchemy models and session
-│   │   └── documents/    # PDF upload, extraction and chunking
+│   │   ├── documents/    # PDF upload, extraction and chunking
+│   │   ├── embeddings/   # EmbeddingProvider, Sentence Transformers, re-indexing
+│   │   └── retrieval/    # Semantic search with collection scoping
 │   ├── migrations/       # Alembic migrations
 │   ├── tests/            # Unit and integration tests
 │   ├── alembic.ini
@@ -183,7 +210,7 @@ research-assistant/
 |---|---|---|
 | 1 | Project foundation | Complete |
 | 2 | Collections and document ingestion | Complete |
-| 3 | Embeddings and retrieval | Planned |
+| 3 | Embeddings and retrieval | Complete |
 | 4 | LLM integration | Planned |
 | 5 | Frontend | Planned |
 | 6 | Evaluation | Planned |

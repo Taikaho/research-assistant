@@ -6,18 +6,18 @@ Design notes:
   embedding model. Dimensions are determined programmatically at embedding time,
   never hardcoded. This prevents silently mixing embeddings from incompatible
   vector spaces.
-- DocumentChunk deliberately has NO vector column in this initial schema.
-  The pgvector column type requires a fixed dimension known at migration time.
-  It will be added in a dedicated Phase 3 migration once the embedding model is
-  configured and its output dimension has been resolved.
-- Each chunk references embedding_model_id so incompatible embeddings can be
-  detected and queries can be scoped to a single vector space.
+- DocumentChunk.embedding is a dimensionless pgvector column (migration 0003).
+  The dimension is a property of the embedding model, not of the schema, so
+  switching models only requires re-indexing — no migration.
+- Each chunk references embedding_model_id. Retrieval always filters on the
+  active model's id, so vectors from incompatible spaces are never compared.
 """
 
 import uuid
 from datetime import datetime
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     TIMESTAMP,
     Boolean,
@@ -126,14 +126,13 @@ class DocumentPage(Base):
 class EmbeddingModel(Base):
     """Registry of embedding models and their resolved output dimensions.
 
-    When an embedding model is first used, its actual vector dimension is
-    determined by loading the model and generating a test embedding. The
-    result is recorded here. Any query or insertion must use a model whose
-    dimension matches the vector column dimension in the active index.
+    When an embedding model is first used, its actual vector dimension is read
+    from the loaded model and recorded here together with its name and version
+    (Hugging Face commit hash when available).
 
     If the configured model changes (embedding_model_name in settings), a new
-    row is inserted and all documents must be re-indexed before the new model
-    can be used for retrieval.
+    row is inserted and marked active. Chunks embedded with the previous model
+    are excluded from retrieval until they are re-indexed.
     """
 
     __tablename__ = "embedding_models"
@@ -146,7 +145,7 @@ class EmbeddingModel(Base):
     version: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Output vector dimension — determined programmatically, never hardcoded
     dimensions: Mapped[int] = mapped_column(Integer, nullable=False)
-    # Only one model should be active at a time for a given dimension
+    # The model currently used for indexing and retrieval; at most one is active
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
@@ -160,11 +159,9 @@ class EmbeddingModel(Base):
 class DocumentChunk(Base):
     """Text chunk extracted from a document page range.
 
-    The embedding vector column is intentionally absent from this initial
-    schema. It will be added in a Phase 3 Alembic migration once the
-    embedding model is configured and its output dimension is known.
-    pgvector requires a fixed dimension at column-creation time, so the
-    migration must run after the model has been selected and verified.
+    `embedding` has no fixed dimension. Its vector space is identified by
+    `embedding_model_id`; both are set together and must only be compared with
+    vectors from the same model.
 
     page_numbers stores a JSON list of PDF page numbers covered by this chunk
     (a chunk may span a page boundary).
@@ -183,7 +180,8 @@ class DocumentChunk(Base):
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    # Nullable until Phase 3 when embeddings are generated
+    # Null until the chunk has been embedded
+    embedding: Mapped[Any | None] = mapped_column(Vector(), nullable=True)
     embedding_model_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("embedding_models.id", ondelete="SET NULL"),

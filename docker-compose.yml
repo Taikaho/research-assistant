@@ -9,8 +9,11 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/research_assistant
       STORAGE_PATH: /app/storage
       DEBUG: "false"
+      # Persist downloaded embedding model weights across container rebuilds
+      EMBEDDING_CACHE_DIR: /models
     volumes:
       - ./storage:/app/storage
+      - model_cache:/models
       # Mount source for --reload to pick up changes during development
       - ./backend:/app
     depends_on:
@@ -35,3 +38,4 @@ services:
 
 volumes:
   postgres_data:
+  model_cache:

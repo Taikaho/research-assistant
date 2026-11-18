@@ -225,7 +225,7 @@ class TestDocumentRouterUnit:
             )
         assert resp.status_code == 201
         assert mock_ingest.await_args is not None
-        assert mock_ingest.await_args.args[2] == ids
+        assert mock_ingest.await_args.args[3] == ids
 
     async def test_upload_invalid_collection_id_returns_422(
         self, client: AsyncClient
@@ -271,7 +271,7 @@ class TestMembershipServiceUnit:
             patch("app.documents.service.link_document") as mock_link,
         ):
             doc, created = await documents_service.ingest_document(
-                mock_db, MagicMock(), [collection_id]
+                mock_db, MagicMock(), MagicMock(), [collection_id]
             )
         assert (doc, created) == (existing, False)
         mock_link.assert_awaited_once_with(mock_db, [collection_id], existing.id)

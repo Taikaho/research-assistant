@@ -10,7 +10,9 @@ WORKDIR /app
 # Install dependencies before copying source for better layer caching.
 # A minimal app/__init__.py stub satisfies hatchling's package discovery.
 COPY pyproject.toml .
+# CPU-only torch is installed first to avoid the multi-GB CUDA build.
 RUN mkdir -p app && touch app/__init__.py \
+    && pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir -e ".[dev]"
 
 # Copy application source (overwrites the stub)

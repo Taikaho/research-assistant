@@ -7,6 +7,8 @@ from app.collections import service as collections_service
 from app.database.connection import get_db
 from app.documents import service
 from app.documents.schemas import DocumentResponse
+from app.embeddings.base import EmbeddingProvider
+from app.embeddings.service import get_embedding_provider
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -16,6 +18,7 @@ async def upload_document(
     file: UploadFile,
     collection_ids: list[uuid.UUID] = Form(default=[]),
     db: AsyncSession = Depends(get_db),
+    provider: EmbeddingProvider = Depends(get_embedding_provider),
 ) -> DocumentResponse:
     """Upload a PDF. Repeat the `collection_ids` form field to add it to collections."""
     if not file.filename or not file.filename.lower().endswith(".pdf"):
@@ -32,9 +35,11 @@ async def upload_document(
         )
 
     try:
-        document, created = await service.ingest_document(db, file, collection_ids)
+        document, created = await service.ingest_document(db, file, provider, collection_ids)
     except ValueError as exc:
         raise HTTPException(status_code=413, detail=str(exc))
+    except service.EmbeddingUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
     except Exception as exc:
         raise HTTPException(
             status_code=422,

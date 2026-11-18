@@ -1,8 +1,7 @@
 """Document ingestion service.
 
-Handles file storage, deduplication, PDF extraction, and chunking.
-All heavy work (PDF extraction, chunking, DB writes) is done synchronously
-within the request for Phase 2. Background task processing is Phase 4.
+Handles file storage, deduplication, PDF extraction, chunking and embedding.
+All work is done within the request; model inference runs in a worker thread.
 """
 
 import hashlib
@@ -21,8 +20,14 @@ from app.core.config import settings
 from app.database.models import Document, DocumentChunk, DocumentPage
 from app.documents.chunking import chunk_page_texts
 from app.documents.processing import extract_pdf
+from app.embeddings.base import EmbeddingProvider
+from app.embeddings.service import embed_chunks, register_model
 
 logger = logging.getLogger(__name__)
+
+
+class EmbeddingUnavailableError(RuntimeError):
+    """The embedding model could not be loaded or failed to embed the document."""
 
 
 async def _compute_hash(file: UploadFile) -> tuple[bytes, str]:
@@ -66,9 +71,10 @@ async def delete_document(db: AsyncSession, document: Document) -> None:
 async def ingest_document(
     db: AsyncSession,
     file: UploadFile,
+    provider: EmbeddingProvider,
     collection_ids: Sequence[uuid.UUID] = (),
 ) -> tuple[Document, bool]:
-    """Store, extract, and chunk a PDF upload, and add it to the given collections.
+    """Store, extract, chunk and embed a PDF upload, and add it to the given collections.
 
     The caller must verify that collection_ids exist. For a duplicate upload the
     existing document is added to the collections instead.
@@ -79,6 +85,8 @@ async def ingest_document(
 
     Raises:
         ValueError: If upload exceeds the size limit.
+        EmbeddingUnavailableError: If the embedding model cannot be loaded (nothing is
+            stored) or embedding fails (status set to 'failed').
         Exception: Propagated from PyMuPDF on corrupt PDFs (status set to 'failed').
     """
     raw_bytes, file_hash = await _compute_hash(file)
@@ -96,6 +104,14 @@ async def ingest_document(
             await link_document(db, collection_ids, existing.id)
             await db.commit()
         return existing, False
+
+    # Resolve the embedding model before storing anything, so an unavailable
+    # model does not leave a half-processed document behind.
+    try:
+        embedding_model = await register_model(db, provider)
+    except Exception as exc:
+        await db.rollback()
+        raise EmbeddingUnavailableError(f"Embedding model unavailable: {exc}") from exc
 
     document_id = uuid.uuid4()
     storage = Path(settings.storage_path)
@@ -137,19 +153,28 @@ async def ingest_document(
     # Chunk across all pages
     page_tuples = [(p.pdf_page_number, p.text) for p in meta.pages]
     chunks = chunk_page_texts(page_tuples, settings.chunk_size, settings.chunk_overlap)
-    for chunk in chunks:
-        db.add(
-            DocumentChunk(
-                document_id=document_id,
-                chunk_index=chunk.chunk_index,
-                text=chunk.text,
-                page_numbers=chunk.page_numbers,
-                chunk_metadata={
-                    "chunk_size": settings.chunk_size,
-                    "chunk_overlap": settings.chunk_overlap,
-                },
-            )
+    chunk_rows = [
+        DocumentChunk(
+            document_id=document_id,
+            chunk_index=chunk.chunk_index,
+            text=chunk.text,
+            page_numbers=chunk.page_numbers,
+            chunk_metadata={
+                "chunk_size": settings.chunk_size,
+                "chunk_overlap": settings.chunk_overlap,
+            },
         )
+        for chunk in chunks
+    ]
+    db.add_all(chunk_rows)
+
+    try:
+        await embed_chunks(provider, embedding_model, chunk_rows)
+    except Exception as exc:
+        logger.exception("Embedding failed for document %s", document_id)
+        document.processing_status = "failed"
+        await db.commit()
+        raise EmbeddingUnavailableError(f"Embedding failed: {exc}") from exc
 
     # Update document with extracted metadata
     document.title = meta.title

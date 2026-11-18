@@ -108,7 +108,7 @@ class TestDocumentServiceUnit:
             patch("app.documents.service._compute_hash", return_value=(b"data", "deadbeef" * 8)),
             patch("app.documents.service.get_document_by_hash", return_value=fake_doc),
         ):
-            doc, created = await ingest_document(mock_db, MagicMock())
+            doc, created = await ingest_document(mock_db, MagicMock(), MagicMock())
 
         assert created is False
         assert doc is fake_doc
@@ -126,6 +126,7 @@ class TestDocumentServiceUnit:
             patch("app.documents.service.get_document_by_hash", return_value=None),
             patch("app.documents.service.Path") as mock_path_cls,
             patch("app.documents.service.aiofiles.open"),
+            patch("app.documents.service.register_model", new=AsyncMock()),
             patch("app.documents.service.extract_pdf", side_effect=Exception("bad pdf")),
             patch("app.documents.service.settings") as mock_settings,
         ):
@@ -136,7 +137,7 @@ class TestDocumentServiceUnit:
             mock_path_cls.return_value = mock_path_instance
 
             with pytest.raises(Exception, match="bad pdf"):
-                await ingest_document(mock_db, MagicMock(filename="x.pdf"))
+                await ingest_document(mock_db, MagicMock(filename="x.pdf"), MagicMock())
 
         mock_db.commit.assert_awaited()
 

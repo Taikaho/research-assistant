@@ -20,6 +20,10 @@ dependencies = [
     "pymupdf>=1.24.0",
     "python-multipart>=0.0.17",
     "aiofiles>=24.1.0",
+    # Install the CPU-only torch wheel first to avoid the multi-GB CUDA build:
+    #   pip install torch --index-url https://download.pytorch.org/whl/cpu
+    "torch>=2.2",
+    "sentence-transformers>=6.3.0,<7",
 ]
 
 [project.optional-dependencies]
@@ -42,10 +46,11 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 # Default: run only unit tests. Use `pytest -m integration` for integration tests.
-addopts = "-m 'not integration'"
+addopts = "-m 'not integration and not model'"
 markers = [
     "unit: Unit tests that do not require external services (default)",
     "integration: Integration tests that require a running PostgreSQL database",
+    "model: Tests that download and run the real embedding model (slow; run explicitly)",
 ]
 
 [tool.ruff]
