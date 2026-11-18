@@ -6,7 +6,9 @@ Research Assistant is a local-first RAG application structured as a modular mono
 
 ```
 Browser
-  └─► FastAPI backend (localhost:8000)
+  └─► Frontend: React SPA served by nginx (localhost:3000), proxies /api ─┐
+                                                                        ▼
+      FastAPI backend (localhost:8000)
         ├─► PostgreSQL + pgvector  (localhost:5432)
         ├─► Local filesystem storage  (./storage/)
         └─► Ollama / Cloud LLM  (Phase 4)
@@ -118,3 +120,36 @@ selected model is local (Ollama) or cloud-based; it only reports which was used.
 
 Responses carry `cloud_processing: true` whenever passages were sent to a cloud
 provider.
+
+## Frontend
+
+React 19 + TypeScript single-page app (`frontend/`), built with Vite and tested
+with Vitest + Testing Library. Server state is handled by TanStack Query;
+routing by React Router. In development the Vite server proxies `/api` to the
+backend; in Docker Compose nginx serves the bundle and proxies `/api`, so the
+browser only ever talks to one origin and the backend needs no CORS setup.
+
+| Area | Route | Contents |
+|---|---|---|
+| Chat | `/chat`, `/chat/:id` | Conversation history, collection scope (always visible), model selection, answers with clickable `[n]` citations, sources, insufficient-evidence and error states |
+| Library | `/library` | Upload (multiple PDFs, target collections, per-file progress), metadata, processing status, collection membership, reprocess, delete, re-index banner |
+| Collections | `/collections` | Create, rename, delete, document counts, shortcuts to chat and library |
+| Source viewer | modal | Original PDF at the cited page, page buttons for multi-page passages, page text with the passage highlighted, full passage |
+
+Design points:
+
+- **The frontend never creates sources.** Citation markers in the answer become
+  links only when their number matches a source returned by the backend.
+- **Page numbers**: the API uses zero-based PDF page indexes; the UI shows
+  one-based "PDF p. N" (and the printed page label when known) and opens the
+  PDF with `#page=N+1`.
+- **PDF display** uses the browser's built-in viewer in an iframe (see
+  `docs/decisions/0001-browser-pdf-viewer.md`). Highlighting is done in the
+  page's extracted text, from which the chunk was cut verbatim.
+- **Model choice** (provider, model, temperature, max tokens, top-k) is kept in
+  `localStorage` and resolved against `GET /models`; a stale choice falls back
+  to the backend default. The active model is shown in the header, with a
+  Local/Cloud badge and an explicit warning when a cloud provider is selected.
+- **Scope**: a new conversation sends the selected collections; follow-ups send
+  `collection_ids` only when the user changes the scope, otherwise the stored
+  conversation scope is used.

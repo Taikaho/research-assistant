@@ -24,11 +24,13 @@ class DocumentMeta:
     pages: list[PageText]
 
 
-def extract_pdf(file_path: Path) -> DocumentMeta:
+def extract_pdf(file_path: Path, fallback_title: str | None = None) -> DocumentMeta:
     """Open a PDF and extract text and metadata.
 
     Args:
         file_path: Absolute path to the PDF file.
+        fallback_title: Title used when the PDF has no title metadata, typically the
+            uploaded filename without extension. Defaults to the stored file's stem.
 
     Returns:
         DocumentMeta with per-page text and document-level metadata.
@@ -40,7 +42,7 @@ def extract_pdf(file_path: Path) -> DocumentMeta:
     doc = fitz.open(str(file_path))  # type: ignore[no-untyped-call]
 
     meta = doc.metadata or {}
-    title: str = (meta.get("title") or "").strip() or file_path.stem
+    title: str = (meta.get("title") or "").strip() or fallback_title or file_path.stem
 
     raw_author = (meta.get("author") or "").strip()
     authors: str | None = raw_author if raw_author else None

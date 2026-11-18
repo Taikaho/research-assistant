@@ -4,7 +4,7 @@ An AI-powered scientific document assistant. Upload PDF articles, organise them
 into collections, and ask questions with full source traceability — including
 document title, PDF page number, and the original supporting passage.
 
-> **Status:** Phase 3 complete — local embeddings and semantic retrieval.
+> **Status:** Phase 5 complete — web interface for collections, documents, chat and source viewing.
 > See `SPEC.md` for the full specification and development phases.
 
 ---
@@ -32,8 +32,10 @@ docker compose up --build
 curl http://localhost:8000/health
 ```
 
-The backend is available at `http://localhost:8000`.
-Interactive API docs: `http://localhost:8000/docs`
+Open the application at `http://localhost:3000`. The frontend container (nginx)
+serves the web interface and proxies `/api` to the backend.
+The backend is also available directly at `http://localhost:8000`
+(interactive API docs: `http://localhost:8000/docs`).
 
 ---
 
@@ -62,6 +64,20 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/research_assi
 # Start the backend with auto-reload
 uvicorn app.main:app --reload
 ```
+
+### Frontend (React + TypeScript + Vite)
+
+Requires Node.js 24+.
+
+```bash
+cd frontend
+npm ci
+npm run dev        # http://localhost:5173
+```
+
+The Vite dev server proxies `/api` and `/health` to `http://localhost:8000`
+(override with `BACKEND_URL=http://host:port npm run dev`), so no CORS
+configuration is needed.
 
 ---
 
@@ -115,6 +131,15 @@ ruff check app/ tests/
 mypy app/
 ```
 
+### Frontend tests
+
+```bash
+cd frontend
+npm run typecheck
+npm test           # Vitest (jsdom); API calls are mocked
+npm run build
+```
+
 ---
 
 ## Environment variables
@@ -158,6 +183,9 @@ See `.env.example` for all variables with descriptions.
 | GET | `/api/v1/documents` | List documents |
 | GET | `/api/v1/documents/{id}` | Get document metadata and processing status |
 | DELETE | `/api/v1/documents/{id}` | Permanently delete a document, its pages, chunks and stored PDF |
+| GET | `/api/v1/documents/{id}/file` | The original PDF, served inline (open at a page with `#page=N`) |
+| GET | `/api/v1/documents/{id}/pages/{page}` | Extracted text of one page (zero-based PDF page index) |
+| POST | `/api/v1/documents/{id}/reprocess` | Re-extract, re-chunk and re-embed a document (collection membership is kept) |
 | POST | `/api/v1/search` | Semantic search within selected collections |
 | POST | `/api/v1/chat` | Answer a question from the selected collections, with sources |
 | GET | `/api/v1/conversations` | List conversations |
@@ -240,6 +268,6 @@ research-assistant/
 | 2 | Collections and document ingestion | Complete |
 | 3 | Embeddings and retrieval | Complete |
 | 4 | LLM integration | Complete |
-| 5 | Frontend | Planned |
+| 5 | Frontend | Complete |
 | 6 | Evaluation | Planned |
 | 7 | Portfolio release | Planned |

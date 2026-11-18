@@ -7,10 +7,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.collections import service
 from app.collections.schemas import CollectionCreate, CollectionResponse, CollectionUpdate
 from app.database.connection import get_db
+from app.database.models import Collection
 from app.documents import service as documents_service
+from app.documents.router import document_responses
 from app.documents.schemas import DocumentResponse
 
 router = APIRouter(prefix="/collections", tags=["collections"])
+
+
+async def _with_count(db: AsyncSession, collection: Collection) -> CollectionResponse:
+    counts = await service.document_counts(db, [collection.id])
+    response = CollectionResponse.model_validate(collection)
+    response.document_count = counts.get(collection.id, 0)
+    return response
 
 
 @router.post("", response_model=CollectionResponse, status_code=status.HTTP_201_CREATED)
@@ -30,7 +39,13 @@ async def create_collection(
 @router.get("", response_model=list[CollectionResponse])
 async def list_collections(db: AsyncSession = Depends(get_db)) -> list[CollectionResponse]:
     collections = await service.list_collections(db)
-    return [CollectionResponse.model_validate(c) for c in collections]
+    counts = await service.document_counts(db, [c.id for c in collections])
+    responses = []
+    for c in collections:
+        response = CollectionResponse.model_validate(c)
+        response.document_count = counts.get(c.id, 0)
+        responses.append(response)
+    return responses
 
 
 @router.get("/{collection_id}", response_model=CollectionResponse)
@@ -40,7 +55,7 @@ async def get_collection(
     collection = await service.get_collection(db, collection_id)
     if collection is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found.")
-    return CollectionResponse.model_validate(collection)
+    return await _with_count(db, collection)
 
 
 @router.patch("/{collection_id}", response_model=CollectionResponse)
@@ -59,7 +74,7 @@ async def update_collection(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"A collection named {data.name!r} already exists.",
         )
-    return CollectionResponse.model_validate(collection)
+    return await _with_count(db, collection)
 
 
 @router.delete("/{collection_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -84,7 +99,7 @@ async def list_collection_documents(
     if await service.get_collection(db, collection_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found.")
     documents = await service.list_documents(db, collection_id)
-    return [DocumentResponse.model_validate(d) for d in documents]
+    return await document_responses(db, documents)
 
 
 @router.put(

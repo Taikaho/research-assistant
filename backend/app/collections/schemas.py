@@ -20,5 +20,7 @@ class CollectionResponse(BaseModel):
     description: str | None
     created_at: datetime
     updated_at: datetime
+    # Number of documents in the collection (filled in by the router).
+    document_count: int = 0
 
     model_config = {"from_attributes": True}

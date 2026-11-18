@@ -2,7 +2,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any, cast
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
@@ -126,3 +126,17 @@ async def list_documents(db: AsyncSession, collection_id: uuid.UUID) -> Sequence
         .order_by(CollectionDocument.added_at, Document.created_at)
     )
     return result.scalars().all()
+
+
+async def document_counts(
+    db: AsyncSession, collection_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """Number of documents in each of the given collections (absent = 0)."""
+    if not collection_ids:
+        return {}
+    rows = await db.execute(
+        select(CollectionDocument.collection_id, func.count())
+        .where(CollectionDocument.collection_id.in_(collection_ids))
+        .group_by(CollectionDocument.collection_id)
+    )
+    return {collection_id: int(n) for collection_id, n in rows.all()}

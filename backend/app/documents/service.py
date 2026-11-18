@@ -12,12 +12,18 @@ from pathlib import Path
 
 import aiofiles
 from fastapi import UploadFile
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.collections.service import link_document
 from app.core.config import settings
-from app.database.models import Document, DocumentChunk, DocumentPage
+from app.database.models import (
+    CollectionDocument,
+    Document,
+    DocumentChunk,
+    DocumentPage,
+    EmbeddingModel,
+)
 from app.documents.chunking import chunk_page_texts
 from app.documents.processing import extract_pdf
 from app.embeddings.base import EmbeddingProvider
@@ -50,6 +56,36 @@ async def get_document(db: AsyncSession, document_id: uuid.UUID) -> Document | N
 async def list_documents(db: AsyncSession) -> Sequence[Document]:
     result = await db.execute(select(Document).order_by(Document.created_at))
     return result.scalars().all()
+
+
+async def collection_ids_by_document(
+    db: AsyncSession, document_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[uuid.UUID]]:
+    """Map each document id to the ids of the collections it belongs to."""
+    if not document_ids:
+        return {}
+    rows = await db.execute(
+        select(CollectionDocument.document_id, CollectionDocument.collection_id)
+        .where(CollectionDocument.document_id.in_(document_ids))
+        .order_by(CollectionDocument.added_at)
+    )
+    membership: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for document_id, collection_id in rows.all():
+        membership.setdefault(document_id, []).append(collection_id)
+    return membership
+
+
+async def get_page(
+    db: AsyncSession, document_id: uuid.UUID, pdf_page_number: int
+) -> DocumentPage | None:
+    """Return the extracted text of one page (zero-based PDF page index)."""
+    result = await db.execute(
+        select(DocumentPage).where(
+            DocumentPage.document_id == document_id,
+            DocumentPage.pdf_page_number == pdf_page_number,
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 async def delete_document(db: AsyncSession, document: Document) -> None:
@@ -133,29 +169,45 @@ async def ingest_document(
     db.add(document)
     await db.flush()  # get the row into the DB within the transaction
 
+    await _extract_chunk_embed(db, document, provider, embedding_model)
+    await link_document(db, collection_ids, document_id)
+    await db.commit()
+    await db.refresh(document)
+    return document, True
+
+
+async def _extract_chunk_embed(
+    db: AsyncSession,
+    document: Document,
+    provider: EmbeddingProvider,
+    embedding_model: EmbeddingModel,
+) -> None:
+    """Extract pages from the stored PDF, chunk and embed them, and fill in metadata.
+
+    Adds rows to the session without committing on success; on failure the status
+    is set to 'failed', committed, and the error re-raised.
+    """
     try:
-        meta = extract_pdf(dest_path)
+        meta = extract_pdf(Path(document.file_path), fallback_title=Path(document.filename).stem)
     except Exception:
         document.processing_status = "failed"
         await db.commit()
         raise
 
-    # Persist page text
     for page in meta.pages:
         db.add(
             DocumentPage(
-                document_id=document_id,
+                document_id=document.id,
                 pdf_page_number=page.pdf_page_number,
                 extracted_text=page.text,
             )
         )
 
-    # Chunk across all pages
     page_tuples = [(p.pdf_page_number, p.text) for p in meta.pages]
     chunks = chunk_page_texts(page_tuples, settings.chunk_size, settings.chunk_overlap)
     chunk_rows = [
         DocumentChunk(
-            document_id=document_id,
+            document_id=document.id,
             chunk_index=chunk.chunk_index,
             text=chunk.text,
             page_numbers=chunk.page_numbers,
@@ -171,18 +223,52 @@ async def ingest_document(
     try:
         await embed_chunks(provider, embedding_model, chunk_rows)
     except Exception as exc:
-        logger.exception("Embedding failed for document %s", document_id)
+        logger.exception("Embedding failed for document %s", document.id)
         document.processing_status = "failed"
         await db.commit()
         raise EmbeddingUnavailableError(f"Embedding failed: {exc}") from exc
 
-    # Update document with extracted metadata
     document.title = meta.title
     document.authors = meta.authors
     document.publication_year = meta.publication_year
     document.page_count = meta.page_count
     document.processing_status = "completed"
-    await link_document(db, collection_ids, document_id)
+
+
+class StoredFileMissingError(RuntimeError):
+    """The document's PDF is no longer in storage, so it cannot be reprocessed."""
+
+
+async def reprocess_document(
+    db: AsyncSession, document: Document, provider: EmbeddingProvider
+) -> Document:
+    """Re-extract, re-chunk and re-embed a stored document with the current settings.
+
+    Existing pages and chunks are replaced. Because chunks are replaced, source
+    links from earlier chat answers to this document are removed (ON DELETE CASCADE).
+    Collection membership is kept.
+
+    Raises:
+        StoredFileMissingError: If the stored PDF is gone.
+        EmbeddingUnavailableError: If the embedding model cannot be loaded (nothing is
+            changed) or embedding fails (status set to 'failed').
+        Exception: Propagated from PyMuPDF on corrupt PDFs (status set to 'failed').
+    """
+    if not Path(document.file_path).is_file():
+        raise StoredFileMissingError(f"Stored PDF for document {document.id} is missing.")
+
+    try:
+        embedding_model = await register_model(db, provider)
+    except Exception as exc:
+        await db.rollback()
+        raise EmbeddingUnavailableError(f"Embedding model unavailable: {exc}") from exc
+
+    await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document.id))
+    await db.execute(delete(DocumentPage).where(DocumentPage.document_id == document.id))
+    document.processing_status = "processing"
+    await db.flush()
+
+    await _extract_chunk_embed(db, document, provider, embedding_model)
     await db.commit()
     await db.refresh(document)
-    return document, True
+    return document
