@@ -4,7 +4,7 @@ An AI-powered scientific document assistant. Upload PDF articles, organise them
 into collections, and ask questions with full source traceability — including
 document title, PDF page number, and the original supporting passage.
 
-> **Status:** Phase 5 complete — web interface for collections, documents, chat and source viewing.
+> **Status:** Phase 6 complete — evaluation framework, multilingual retrieval (Finnish questions).
 > See `SPEC.md` for the full specification and development phases.
 
 ---
@@ -36,6 +36,15 @@ Open the application at `http://localhost:3000`. The frontend container (nginx)
 serves the web interface and proxies `/api` to the backend.
 The backend is also available directly at `http://localhost:8000`
 (interactive API docs: `http://localhost:8000/docs`).
+
+### Upgrading a library created before Phase 6
+
+The default embedding model changed to the multilingual `BAAI/bge-m3`. Existing
+documents are not searched until they are re-indexed once: use the banner on the
+Library page, `POST /api/v1/embeddings/reindex`, or `python -m app.embeddings.reindex`.
+To keep the old English-only model instead, set `EMBEDDING_MODEL_NAME=BAAI/bge-small-en-v1.5`,
+`EMBEDDING_QUERY_PREFIX="Represent this sentence for searching relevant passages: "`
+and `CHAT_MIN_RELEVANCE=0.6`.
 
 ---
 
@@ -131,6 +140,20 @@ ruff check app/ tests/
 mypy app/
 ```
 
+### RAG evaluation
+
+Retrieval, gate calibration, answer and citation quality against a question
+dataset, in a separate `*_eval` database. See [`evaluation/README.md`](evaluation/README.md).
+
+```bash
+cd backend
+export DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/research_assistant_eval
+python -m app.evaluation setup-db
+python ../evaluation/datasets/smoke/generate_pdfs.py
+python -m app.evaluation run --dataset ../evaluation/datasets/smoke \
+    --config ../evaluation/configs/retrieval_bge-m3.json
+```
+
 ### Frontend tests
 
 ```bash
@@ -151,7 +174,7 @@ See `.env.example` for all variables with descriptions.
 | `DATABASE_URL` | `postgresql+asyncpg://...@localhost:5432/research_assistant` | Development database |
 | `TEST_DATABASE_URL` | `postgresql+asyncpg://...@localhost:5433/research_assistant_test` | Test database (integration tests) |
 | `STORAGE_PATH` | `./storage` | Local PDF storage directory |
-| `EMBEDDING_MODEL_NAME` | `BAAI/bge-small-en-v1.5` | Sentence Transformers model; changing it requires re-indexing |
+| `EMBEDDING_MODEL_NAME` | `BAAI/bge-m3` | Sentence Transformers model (multilingual); changing it requires re-indexing and a matching `EMBEDDING_QUERY_PREFIX` / `CHAT_MIN_RELEVANCE` |
 | `EMBEDDING_CACHE_DIR` | Hugging Face default | Where model weights are downloaded |
 | `RETRIEVAL_TOP_K` | `5` | Default number of passages returned by search |
 | `LLM_DEFAULT_PROVIDER` | `ollama` | Provider used when a chat request names none |
@@ -160,7 +183,7 @@ See `.env.example` for all variables with descriptions.
 | `OLLAMA_DEFAULT_MODEL` | first installed | Default Ollama model |
 | `OPENAI_API_KEY` | unset | Enables the OpenAI-compatible cloud provider |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible endpoint |
-| `CHAT_MIN_RELEVANCE` | `0.6` | Below this, answer "insufficient evidence" without calling the LLM |
+| `CHAT_MIN_RELEVANCE` | `0.45` | Below this, answer "insufficient evidence" without calling the LLM (calibrated for bge-m3) |
 | `DEBUG` | `false` | Enable SQLAlchemy query logging |
 
 ---
@@ -269,5 +292,5 @@ research-assistant/
 | 3 | Embeddings and retrieval | Complete |
 | 4 | LLM integration | Complete |
 | 5 | Frontend | Complete |
-| 6 | Evaluation | Planned |
+| 6 | Evaluation | Complete |
 | 7 | Portfolio release | Planned |

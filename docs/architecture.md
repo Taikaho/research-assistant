@@ -35,8 +35,10 @@ backend or database.
 ## Embedding model design
 
 Embeddings are generated locally with Sentence Transformers behind the
-`EmbeddingProvider` interface (`app/embeddings/base.py`). The default model is
-`BAAI/bge-small-en-v1.5` (384 dims, 512-token input, which covers ~500-token chunks).
+`EmbeddingProvider` interface (`app/embeddings/base.py`). The default model is the
+multilingual `BAAI/bge-m3` (1024 dims, 8192-token input), so questions in Finnish
+retrieve English passages; until Phase 6 it was the English-only
+`BAAI/bge-small-en-v1.5` (see `docs/decisions/0002-multilingual-embedding-model.md`).
 Model inference runs in a worker thread so it never blocks the event loop.
 
 To prevent silently mixing incompatible vector spaces:
@@ -153,3 +155,26 @@ Design points:
 - **Scope**: a new conversation sends the selected collections; follow-ups send
   `collection_ids` only when the user changes the scope, otherwise the stored
   conversation scope is used.
+
+## Evaluation
+
+`app/evaluation/` (CLI: `python -m app.evaluation`) measures the pipeline against
+a dataset of questions with expected answers, PDF pages and supporting passages.
+It drives the production code (ingestion, `retrieval.search`, `chat.answer_question`)
+in a dedicated `*eval*` database and reports retrieval metrics (Recall@k,
+Precision@k, Hit@k, MRR), relevance-gate calibration, abstention, citation
+correctness, latency, tokens and optional LLM-judge scores, plus a CSV for
+manual grading. Every run records the full configuration (models and their
+revisions, settings, prompt versions, dataset fingerprint, git commit).
+See `evaluation/README.md`.
+
+| Module | Responsibility |
+|---|---|
+| `dataset.py` | Dataset schema (one-based PDF pages), validation, fingerprint |
+| `matching.py` | When a chunk is relevant to a dataset passage |
+| `metrics.py` | Metric definitions and gate calibration (pure functions) |
+| `config.py` | Experiment configs and the settings they override |
+| `runner.py` | Corpus preparation, dataset checks, retrieval and generation evaluation |
+| `judge.py` | LLM-as-judge prompt and parsing (auxiliary signal) |
+| `report.py` | Summaries, Markdown reports, comparisons, manual review sheet |
+| `experiment.py` | One complete run and its reproducibility record |

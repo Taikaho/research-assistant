@@ -1,0 +1,7 @@
+{
+  "name": "retrieval_bge-m3",
+  "description": "Retrieval only, multilingual BGE-M3 (dense vectors, no query prefix).",
+  "embedding": { "model_name": "BAAI/bge-m3", "query_prefix": "" },
+  "retrieval": { "k_values": [1, 3, 5] },
+  "generation": { "enabled": false }
+}

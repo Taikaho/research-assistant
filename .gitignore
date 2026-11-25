@@ -54,3 +54,8 @@ frontend/.next/
 
 # Alembic (auto-generated offline SQL scripts)
 migrations/versions/*.sql
+
+# Evaluation: article PDFs may be copyrighted; run outputs contain their text
+evaluation/datasets/**/*.pdf
+evaluation/results/*
+!evaluation/results/.gitkeep

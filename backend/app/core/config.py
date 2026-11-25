@@ -39,18 +39,21 @@ class Settings(BaseSettings):
     # never hardcoded. Changing the model requires re-indexing (POST /embeddings/reindex);
     # retrieval only ever compares vectors produced by the currently configured model.
     #
-    # Default: BAAI/bge-small-en-v1.5 (384 dims, 512-token input). Chunks are ~500
-    # tokens, so models with a 256-token limit (e.g. all-MiniLM-L6-v2) would silently
-    # ignore the second half of every chunk.
+    # Default: BAAI/bge-m3 (multilingual, 1024 dims, 8192-token input), chosen in
+    # Phase 6 so that questions in Finnish (and other languages) retrieve English
+    # passages; the English-only bge-small-en-v1.5 scored Finnish questions like
+    # unrelated text. Models with a 256-token limit (e.g. all-MiniLM-L6-v2) would
+    # silently ignore the second half of every ~500-token chunk.
     embedding_provider: str = "sentence_transformers"
-    embedding_model_name: str = "BAAI/bge-small-en-v1.5"
+    embedding_model_name: str = "BAAI/bge-m3"
     # Optional Hugging Face revision (commit hash or tag) to pin the model weights.
     embedding_model_revision: str | None = None
     # Directory for downloaded model weights; None uses the Hugging Face default cache.
     embedding_cache_dir: str | None = None
-    # Instruction prepended to queries only (BGE retrieval convention). Must match the
-    # model: set to "" for models that do not use a query instruction.
-    embedding_query_prefix: str = "Represent this sentence for searching relevant passages: "
+    # Instruction prepended to queries only. Must match the model: "" for bge-m3;
+    # "Represent this sentence for searching relevant passages: " for the English
+    # bge-*-en-v1.5 models.
+    embedding_query_prefix: str = ""
     embedding_batch_size: int = 32
     embedding_device: str | None = None  # e.g. "cpu", "cuda"; None = auto-detect
 
@@ -100,10 +103,12 @@ class Settings(BaseSettings):
     # Passages given to the LLM; None = retrieval_top_k.
     chat_top_k: int | None = None
     # Best passage must reach this cosine similarity, otherwise the question is answered
-    # with an insufficient-evidence response without calling the LLM. BGE scores are
-    # compressed (unrelated text often scores 0.55-0.63), so this is a coarse first gate;
-    # the model's own insufficient-evidence signal is the second. Calibrate in Phase 6.
-    chat_min_relevance: float = 0.6
+    # with an insufficient-evidence response without calling the LLM. A coarse first gate
+    # that only removes clearly unrelated questions; the model's own insufficient-evidence
+    # signal is the second. The value depends on the embedding model: 0.45 is calibrated
+    # for bge-m3 with `python -m app.evaluation` (bge-small-en-v1.5 needed ~0.6).
+    # Provisional until recalibrated on the manually verified dataset.
+    chat_min_relevance: float = 0.45
     # Previous messages (user + assistant) included in the prompt for follow-ups.
     chat_history_messages: int = 6
 

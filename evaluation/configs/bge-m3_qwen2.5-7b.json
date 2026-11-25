@@ -1,0 +1,8 @@
+{
+  "name": "bge-m3_qwen2.5-7b",
+  "description": "Full RAG: BGE-M3 retrieval, qwen2.5:7b answers and judge (judge grades its own model's answers: possible self-preference bias).",
+  "embedding": { "model_name": "BAAI/bge-m3", "query_prefix": "" },
+  "retrieval": { "k_values": [1, 3, 5] },
+  "generation": { "provider": "ollama", "model": "qwen2.5:7b", "temperature": 0.1, "min_relevance": 0.45 },
+  "judge": { "enabled": true, "provider": "ollama", "model": "qwen2.5:7b" }
+}
