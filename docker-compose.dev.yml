@@ -1,0 +1,15 @@
+# Development override for docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+# - mounts the backend source and restarts uvicorn on changes
+#   (the mount also exposes backend/.env to the app; values under "environment"
+#   in docker-compose.yml still take precedence)
+# - publishes the database on localhost:5432 for a backend run outside Docker
+services:
+  backend:
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes:
+      - ./backend:/app
+
+  db:
+    ports:
+      - "5432:5432"

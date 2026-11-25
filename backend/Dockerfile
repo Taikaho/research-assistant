@@ -13,7 +13,7 @@ COPY pyproject.toml .
 # CPU-only torch is installed first to avoid the multi-GB CUDA build.
 RUN mkdir -p app && touch app/__init__.py \
     && pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --no-cache-dir -e ".[dev]"
+    && pip install --no-cache-dir -e .
 
 # Copy application source (overwrites the stub)
 COPY . .
@@ -24,4 +24,5 @@ EXPOSE 8000
 
 # Run migrations then start the server.
 # Migrations are idempotent; re-running against an already-migrated DB is safe.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
+# docker-compose.dev.yml overrides this with --reload and a source mount.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]

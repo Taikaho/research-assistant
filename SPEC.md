@@ -894,7 +894,9 @@ Deliverable: Reproducible RAG evaluation framework.
 
 - Improve documentation.
 - Add architecture diagrams.
-- Add screenshots or demonstration video.
+- ~~Add screenshots or demonstration video.~~ Removed from scope (2026-11-25):
+  the release ships without demo media; the README's sample papers and example
+  questions let a developer see the system working within minutes instead.
 - Document installation and configuration.
 - Document model requirements.
 - Document privacy and cloud processing behavior.

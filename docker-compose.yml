@@ -1,3 +1,6 @@
+# Release configuration: runs the code built into the images.
+# For development with auto-reload and a published database port, add the override:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 services:
   frontend:
     build:
@@ -6,6 +9,7 @@ services:
       - "3000:80"
     depends_on:
       - backend
+    restart: unless-stopped
 
   backend:
     build:
@@ -13,10 +17,14 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    # Optional settings (OPENAI_API_KEY, LLM_LOCAL_ONLY, OLLAMA_DEFAULT_MODEL, ...).
+    # Values under "environment" below take precedence over this file.
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/research_assistant
       STORAGE_PATH: /app/storage
-      DEBUG: "false"
       # Persist downloaded embedding model weights across container rebuilds
       EMBEDDING_CACHE_DIR: /models
       # Ollama runs on the host (see README); reach it from the container
@@ -27,20 +35,19 @@ services:
     volumes:
       - ./storage:/app/storage
       - model_cache:/models
-      # Mount source for --reload to pick up changes during development
-      - ./backend:/app
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
 
   db:
     image: pgvector/pgvector:pg17
+    # No published port: only the backend talks to the database.
+    # docker-compose.dev.yml publishes 5432 for local development.
     environment:
       POSTGRES_DB: research_assistant
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -48,6 +55,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
 
 volumes:
   postgres_data:

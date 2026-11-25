@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # Application
     app_name: str = "Research Assistant"
-    app_version: str = "0.1.0"
+    app_version: str = "1.0.0"
     debug: bool = False
 
     # Database (development / Docker Compose default)

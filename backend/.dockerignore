@@ -1,0 +1,15 @@
+# Keep the image small and free of local configuration and secrets.
+.venv/
+venv/
+.env
+*.env
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+storage/

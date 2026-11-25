@@ -4,18 +4,52 @@
 
 Research Assistant is a local-first RAG application structured as a modular monolith.
 
-```
-Browser
-  └─► Frontend: React SPA served by nginx (localhost:3000), proxies /api ─┐
-                                                                        ▼
-      FastAPI backend (localhost:8000)
-        ├─► PostgreSQL + pgvector  (localhost:5432)
-        ├─► Local filesystem storage  (./storage/)
-        └─► Ollama / Cloud LLM  (Phase 4)
+```mermaid
+flowchart LR
+    browser([Browser])
+
+    subgraph compose[Docker Compose]
+        frontend["Frontend<br/>React SPA on nginx<br/>:3000"]
+        backend["FastAPI backend<br/>:8000<br/>embeddings run in-process"]
+        db[("PostgreSQL + pgvector")]
+    end
+
+    storage[/"./storage/<br/>original PDFs"/]
+    ollama["Ollama on the host<br/>local LLM"]
+    cloud["OpenAI-compatible API<br/>opt-in"]
+    hf["Hugging Face Hub<br/>model download, first run only"]
+
+    browser -->|UI and /api| frontend
+    frontend -->|proxies /api| backend
+    backend --> db
+    backend --> storage
+    backend -->|prompt| ollama
+    backend -.->|prompt, only if enabled| cloud
+    backend -.-> hf
 ```
 
-All services run via Docker Compose. The application never requires a cloud-hosted
-backend or database.
+Frontend, backend and database run in Docker Compose. Ollama runs on the host so
+it can use the GPU and the models already pulled there. Nothing requires a
+cloud-hosted backend or database; the dashed connections are optional (see
+[privacy.md](privacy.md)).
+
+## Document ingestion
+
+Upload processing runs within the upload request; the document's status is
+`processing` until it ends as `completed` or `failed`.
+
+```mermaid
+flowchart TD
+    upload["POST /documents<br/>PDF + collection_ids"] --> hash{"Same SHA-256<br/>already stored?"}
+    hash -->|yes| link["Add the existing document<br/>to the given collections"]
+    hash -->|no| store["Save the PDF to storage<br/>status: processing"]
+    store --> extract["Extract text per page (PyMuPDF)<br/>normalise to Unicode NFKC<br/>title, authors, year from PDF metadata"]
+    extract --> chunk["Split into overlapping chunks<br/>keeping their PDF pages"]
+    chunk --> embed["Embed chunks locally<br/>(BAAI/bge-m3)"]
+    embed --> done["Save pages, chunks, vectors<br/>status: completed"]
+    extract -. error .-> failed["status: failed"]
+    embed -. error .-> failed
+```
 
 ## Module structure
 
@@ -92,6 +126,22 @@ selected model is local (Ollama) or cloud-based; it only reports which was used.
   never persisted to the database, logged or returned by the API.
 
 ## Question answering (`POST /api/v1/chat`)
+
+```mermaid
+flowchart TD
+    q["Question + collection scope"] --> retrieve["Embed the question and rank chunks<br/>from the selected collections only"]
+    retrieve --> gate{"Relevance gate:<br/>best passage ≥ CHAT_MIN_RELEVANCE?"}
+    gate -->|no| ie1["Insufficient evidence<br/>LLM not called"]
+    gate -->|yes| prompt["Prompt with numbered passages [1]..[n]<br/>and earlier turns"]
+    prompt --> llm["LLM<br/>Ollama or cloud provider"]
+    llm --> parse{"Answer starts with<br/>INSUFFICIENT_EVIDENCE?"}
+    parse -->|yes| ie2["Insufficient evidence<br/>reported by the model"]
+    parse -->|no| cite["Drop citation markers outside 1..n"]
+    cite --> sources["Attach sources from retrieval metadata:<br/>document, PDF pages, passage, cited flag"]
+    ie1 --> save["Save the conversation turn"]
+    ie2 --> save
+    sources --> save
+```
 
 1. **Scope**: `collection_ids`, or the stored scope of `conversation_id`.
 2. **Retrieval**: the Phase 3 search (scope enforced in SQL). In a conversation

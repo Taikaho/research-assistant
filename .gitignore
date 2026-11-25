@@ -59,3 +59,6 @@ migrations/versions/*.sql
 evaluation/datasets/**/*.pdf
 evaluation/results/*
 !evaluation/results/.gitkeep
+
+# Sample papers: downloaded by samples/download_samples.py, not committed
+samples/pdfs/

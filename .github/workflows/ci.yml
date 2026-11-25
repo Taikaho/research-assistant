@@ -119,3 +119,25 @@ jobs:
 
       - name: Build
         run: npx vite build
+
+  # -------------------------------------------------------------------------
+  # Docker images: validates the Compose files and builds both images.
+  # The stack is not started here; the full run is checked locally before a release.
+  # -------------------------------------------------------------------------
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Compose files
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet
+
+      - name: Build images
+        run: docker compose -f docker-compose.yml build
