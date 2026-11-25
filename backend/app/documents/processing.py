@@ -3,10 +3,25 @@
 Extracts per-page text and basic metadata from a PDF file.
 """
 
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
 import pymupdf as fitz  # PyMuPDF
+
+
+def normalize_text(text: str) -> str:
+    """Normalise extracted PDF text to Unicode NFKC and drop NUL characters.
+
+    NFKC folds compatibility characters that PDFs often contain into their plain
+    forms, e.g. the ligatures "ﬁ"/"ﬂ" into "fi"/"fl" and full-width letters into
+    ASCII, so that a query for "field" matches text extracted as "ﬁeld". It also
+    composes decomposed letters ("a" + combining diaeresis -> "ä"). The trade-off
+    is that some typographic distinctions are lost, e.g. "m²" becomes "m2".
+
+    PostgreSQL text columns cannot store NUL, which some broken PDFs emit.
+    """
+    return unicodedata.normalize("NFKC", text).replace("\x00", "")
 
 
 @dataclass
@@ -42,9 +57,9 @@ def extract_pdf(file_path: Path, fallback_title: str | None = None) -> DocumentM
     doc = fitz.open(str(file_path))  # type: ignore[no-untyped-call]
 
     meta = doc.metadata or {}
-    title: str = (meta.get("title") or "").strip() or fallback_title or file_path.stem
+    title: str = normalize_text(meta.get("title") or "").strip() or fallback_title or file_path.stem
 
-    raw_author = (meta.get("author") or "").strip()
+    raw_author = normalize_text(meta.get("author") or "").strip()
     authors: str | None = raw_author if raw_author else None
 
     year: int | None = None
@@ -59,7 +74,7 @@ def extract_pdf(file_path: Path, fallback_title: str | None = None) -> DocumentM
     pages: list[PageText] = []
     for page_num in range(len(doc)):
         page = doc[page_num]
-        text = page.get_text()  # type: ignore[no-untyped-call]
+        text = normalize_text(page.get_text())  # type: ignore[no-untyped-call]
         pages.append(PageText(pdf_page_number=page_num, text=text))
 
     doc.close()  # type: ignore[no-untyped-call]
